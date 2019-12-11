@@ -1,17 +1,26 @@
 import pymysql.cursors
 from prettytable import PrettyTable
+import os
 
 connection = pymysql.connect(host='localhost', user='root', password='', db='cours',
                              cursorclass=pymysql.cursors.DictCursor)
 
-first = 'SELECT author_id, full_name, SUM(income) summed_income FROM orders JOIN publications USING (' \
-        'publication_id) JOIN publications_authors USING (publication_id)JOIN authors USING (author_id) JOIN ' \
-        '(SELECT publication_id, name, cost/COUNT(*) as income FROM orders JOIN publications USING (' \
-        'publication_id) JOIN publications_authors USING (publication_id) JOIN authors uSING (author_id) ' \
-        'GROUP BY publication_id, order_id) A USING (publication_id) GROUP BY author_id'
+query_names = ['Посчитайте прибыль, принесенную печатью изданий определенного автора.'
+               '\nРаспределение прибыли между авторами равномерное.',
+               'Отсортируйте заказчиков в порядке суммарной суммы заказов.']
+queries = ['SELECT author_id, full_name, SUM(income) summed_income FROM orders JOIN publications USING ('
+           'publication_id) JOIN publications_authors USING (publication_id)JOIN authors USING (author_id) JOIN '
+           '(SELECT publication_id, name, cost/COUNT(*) as income FROM orders JOIN publications USING ('
+           'publication_id) JOIN publications_authors USING (publication_id) JOIN authors USING (author_id) '
+           'GROUP BY publication_id, order_id) A USING (publication_id) GROUP BY author_id',
+           'SELECT customer_id, SUM(cost) FROM customers JOIN orders USING (customer_id) GROUP BY customer_id '
+           'ORDER BY SUM(cost)']
 
-second = 'SELECT customer_id, SUM(cost) FROM customers JOIN orders USING (customer_id) GROUP BY customer_id ' \
-         'ORDER BY SUM(cost)'
+
+def get_tables_names(cursor):
+    query = 'SHOW TABLES'
+    cursor.execute(query)
+    return [row['Tables_in_cours'] for row in cursor]
 
 
 def get_column_names(table_name, cursor):
@@ -20,7 +29,19 @@ def get_column_names(table_name, cursor):
     return [row['Field'] for row in cursor]
 
 
-def select_from(table_name, cursor):
+tables_names = get_tables_names(connection.cursor())
+
+
+def get_table_name():
+    print('Select table:')
+    table = PrettyTable(tables_names)
+    for name in tables_names:
+        print(name)
+    return input()
+
+
+def select_from(cursor):
+    table_name = get_table_name()
     column_names = get_column_names(table_name, cursor)
     table = PrettyTable(column_names)
     query = 'SELECT * FROM {}'.format(table_name)
@@ -30,16 +51,12 @@ def select_from(table_name, cursor):
     print(table)
 
 
-def show_tables(cursor):
-    query = 'SHOW TABLES'
-    cursor.execute(query)
-    for row in cursor:
-        print(row['Tables_in_cours'])
-
-
-def execute_query(query, cursor):
-    query = eval(query)
-    cursor.execute(query)
+def execute_query(cursor):
+    print('Select query:')
+    for i in range(len(queries)):
+        print('{} - {}'.format(i + 1, query_names[i]))
+    i = int(input())
+    cursor.execute(queries[i - 1])
     column_names = [desc[0] for desc in cursor.description]
     table = PrettyTable(column_names)
     for row in cursor:
@@ -47,11 +64,12 @@ def execute_query(query, cursor):
     print(table)
 
 
-def insert_into(table_name, cursor):
+def insert_into(cursor):
+    table_name = get_table_name()
     column_names = get_column_names(table_name, cursor)
     row_values = []
     for name in column_names:
-        print(name)
+        print('Enter {}:'.format(name))
         value = input()
         if value == '':
             row_values.append('NULL')
@@ -66,27 +84,31 @@ def insert_into(table_name, cursor):
 
 
 def help():
-    print('select <table-name> - shows table rows;\ninsert <table-name> - inserts new raw to the table;'
-          '\nshow - shows tables names;\nquery <query number> - executes query (\'first\' or \'second\')')
+    print('Commands:\nshow - shows table rows;\ninsert - inserts new raw to the table;\nclear - clears screen'
+          '\nshow - shows tables names;\nquery - executes query\nexit - exits from the program')
 
 
-dictionary = {'select': select_from, 'insert': insert_into, 'show': show_tables, 'query': execute_query, 'help': help}
+def clear():
+    os.system('cls')
+
+
+dictionary = {'show': select_from, 'insert': insert_into, 'query': execute_query, 'help': help, 'clear': clear}
 
 if __name__ == '__main__':
     with connection.cursor() as cursor:
         while True:
-            command = input()
-            command = command.split(' ')
+            print('Enter command:')
+            command = input().lower().strip()
             try:
-                if command[0] == 'exit':
+                if command == 'exit':
                     break
-                elif command[0] == 'show' or command[0] == 'help':
-                    dictionary.get(command[0])(cursor)
+                elif command == 'help' or command == 'clear':
+                    dictionary.get(command)()
                 else:
-                    dictionary.get(command[0])(command[1], cursor)
-            except (TypeError, IndexError) as e:
+                    dictionary.get(command)(cursor)
+            except (TypeError, IndexError):
                 print('Wrong command, try \'help\'')
             except NameError:
                 print('Wrong query name')
-            except pymysql.err.ProgrammingError:
+            except (pymysql.err.ProgrammingError, pymysql.err.IntegrityError):
                 print('Wrong input values')
