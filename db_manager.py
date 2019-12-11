@@ -1,4 +1,5 @@
 import pymysql.cursors
+from prettytable import PrettyTable
 
 connection = pymysql.connect(host='localhost', user='root', password='', db='cours',
                              cursorclass=pymysql.cursors.DictCursor)
@@ -13,49 +14,55 @@ second = 'SELECT customer_id, SUM(cost) FROM customers JOIN orders USING (custom
          'ORDER BY SUM(cost)'
 
 
-def select_from(table_name):
-    with connection.cursor() as cursor:
-        query = 'SELECT * FROM {}'.format(table_name)
-        cursor.execute(query)
-        for row in cursor:
-            print(row)
+def get_column_names(table_name, cursor):
+    query = 'SHOW COLUMNS FROM {}'.format(table_name)
+    cursor.execute(query)
+    return [row['Field'] for row in cursor]
 
 
-def show_tables():
-    with connection.cursor() as cursor:
-        query = 'SHOW TABLES'
-        cursor.execute(query)
-        for row in cursor:
-            print(row['Tables_in_cours'])
+def select_from(table_name, cursor):
+    column_names = get_column_names(table_name, cursor)
+    table = PrettyTable(column_names)
+    query = 'SELECT * FROM {}'.format(table_name)
+    cursor.execute(query)
+    for row in cursor:
+        table.add_row(list(row.values()))
+    print(table)
 
 
-def execute_query(query):
+def show_tables(cursor):
+    query = 'SHOW TABLES'
+    cursor.execute(query)
+    for row in cursor:
+        print(row['Tables_in_cours'])
+
+
+def execute_query(query, cursor):
     query = eval(query)
-    with connection.cursor() as cursor:
-        cursor.execute(query)
-        for row in cursor:
-            print(row)
+    cursor.execute(query)
+    column_names = [desc[0] for desc in cursor.description]
+    table = PrettyTable(column_names)
+    for row in cursor:
+        table.add_row(list(row.values()))
+    print(table)
 
 
-def insert_into(table_name):
-    with connection.cursor() as cursor:
-        query = 'SHOW COLUMNS FROM {}'.format(table_name)
-        cursor.execute(query)
-        column_names = [row['Field'] for row in cursor]
-        row_values = []
-        for names in column_names:
-            print(names)
-            value = input()
-            if value == '':
-                row_values.append('NULL')
-            else:
-                row_values.append(value)
-        query = 'INSERT INTO {} VALUES({})'.format(table_name,
-                                                   row_values.__str__().replace('[', '').replace(']', '').replace(
-                                                       '\'NULL\'', 'NULL'))
-        cursor.execute(query)
-        connection.commit()
-        print('1 new raw was successfully added')
+def insert_into(table_name, cursor):
+    column_names = get_column_names(table_name, cursor)
+    row_values = []
+    for name in column_names:
+        print(name)
+        value = input()
+        if value == '':
+            row_values.append('NULL')
+        else:
+            row_values.append(value)
+    query = 'INSERT INTO {} VALUES({})'.format(table_name,
+                                               row_values.__str__().replace('[', '').replace(']', '').replace(
+                                                   '\'NULL\'', 'NULL'))
+    cursor.execute(query)
+    connection.commit()
+    print('1 new raw was successfully added')
 
 
 def help():
@@ -66,19 +73,20 @@ def help():
 dictionary = {'select': select_from, 'insert': insert_into, 'show': show_tables, 'query': execute_query, 'help': help}
 
 if __name__ == '__main__':
-    while True:
-        command = input()
-        command = command.split(' ')
-        try:
-            if command[0] == 'exit':
-                break
-            elif command[0] == 'show' or command[0] == 'help':
-                dictionary.get(command[0])()
-            else:
-                dictionary.get(command[0])(command[1])
-        except (TypeError, IndexError) as e:
-            print('Wrong command, try \'help\'')
-        except NameError:
-            print('Wrong query name')
-        except pymysql.err.ProgrammingError:
-            print('Wrong input values')
+    with connection.cursor() as cursor:
+        while True:
+            command = input()
+            command = command.split(' ')
+            try:
+                if command[0] == 'exit':
+                    break
+                elif command[0] == 'show' or command[0] == 'help':
+                    dictionary.get(command[0])(cursor)
+                else:
+                    dictionary.get(command[0])(command[1], cursor)
+            except (TypeError, IndexError) as e:
+                print('Wrong command, try \'help\'')
+            except NameError:
+                print('Wrong query name')
+            except pymysql.err.ProgrammingError:
+                print('Wrong input values')
